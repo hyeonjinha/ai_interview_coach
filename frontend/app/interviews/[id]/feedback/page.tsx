@@ -1,0 +1,549 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
+import { 
+  ArrowLeft,
+  Download,
+  Share,
+  Star,
+  TrendingUp,
+  Target,
+  MessageCircle,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  Lightbulb,
+  RefreshCw
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Loading, CardSkeleton } from '@/components/ui/loading';
+import { FeedbackLoadingUI } from '@/components/ui/feedback-loading';
+import { interviewApi } from '@/lib/api';
+import { getScoreColor, getScoreBgColor, formatDate } from '@/lib/utils';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
+
+// 가상의 평가 데이터 (실제로는 백엔드에서 받아올 것)
+const mockEvaluationData = [
+  { subject: '질문 이해도', A: 85, fullMark: 100 },
+  { subject: '논리성', A: 78, fullMark: 100 },
+  { subject: '기술 깊이', A: 92, fullMark: 100 },
+  { subject: '공고 적합성', A: 88, fullMark: 100 },
+  { subject: '커뮤니케이션', A: 82, fullMark: 100 },
+  { subject: '창의성', A: 75, fullMark: 100 },
+];
+
+export default function FeedbackPage() {
+  const params = useParams();
+  const router = useRouter();
+  const sessionId = parseInt(params.id as string);
+
+  const [selectedQAIndex, setSelectedQAIndex] = useState<number | null>(null);
+  const [feedbackStatus, setFeedbackStatus] = useState<'loading' | 'pending' | 'processing' | 'completed' | 'failed' | 'not_found'>('loading');
+  const [progress, setProgress] = useState(0);
+  const [feedback, setFeedback] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // 피드백 상태 폴링
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout;
+
+    const pollFeedbackStatus = async () => {
+      try {
+        const statusData = await interviewApi.getFeedbackStatus(sessionId);
+        
+        setFeedbackStatus(statusData.status as any);
+        setProgress(statusData.progress);
+        setError(statusData.error);
+        
+        if (statusData.status === 'completed' && statusData.report) {
+          setFeedback(statusData.report);
+          clearInterval(pollInterval);
+        } else if (statusData.status === 'failed') {
+          clearInterval(pollInterval);
+        } else if (statusData.status === 'not_found') {
+          // 기존 방식으로 피드백 생성 시도
+          try {
+            const feedbackData = await interviewApi.getFeedback(sessionId);
+            setFeedback(feedbackData);
+            setFeedbackStatus('completed');
+            setProgress(100);
+            clearInterval(pollInterval);
+          } catch (error) {
+            console.error('피드백 조회 실패:', error);
+            setFeedbackStatus('failed');
+            setError('피드백을 불러올 수 없습니다');
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (error) {
+        console.error('피드백 상태 확인 실패:', error);
+        setFeedbackStatus('failed');
+        setError('피드백 상태를 확인할 수 없습니다');
+        clearInterval(pollInterval);
+      }
+    };
+
+    // 즉시 한 번 실행
+    pollFeedbackStatus();
+
+    // 2초마다 상태 확인 (processing 상태일 때만)
+    pollInterval = setInterval(() => {
+      if (feedbackStatus === 'processing' || feedbackStatus === 'pending' || feedbackStatus === 'loading') {
+        pollFeedbackStatus();
+      } else {
+        clearInterval(pollInterval);
+      }
+    }, 2000);
+
+    // 컴포넌트 언마운트 시 인터벌 정리
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
+  }, [sessionId, feedbackStatus]);
+
+  // 면접 전사 데이터 조회 (피드백이 완료된 경우에만)
+  const { data: transcript, isLoading: transcriptLoading } = useQuery({
+    queryKey: ['interview-transcript', sessionId],
+    queryFn: () => interviewApi.getTranscript(sessionId),
+    enabled: feedbackStatus === 'completed' && !!feedback,
+  });
+
+  const isLoading = transcriptLoading;
+
+  // 전체 점수 계산
+  const overallScore = mockEvaluationData.reduce((sum, item) => sum + item.A, 0) / mockEvaluationData.length;
+  
+  // 가상의 상세 Q&A 피드백 데이터
+  const qaFeedbacks = transcript?.items.map((item, index) => ({
+    question: item.question,
+    answer: item.answer || '답변 없음',
+    score: Math.floor(Math.random() * 2) + 3, // 3-5점
+    strengths: [
+      '구체적인 사례를 제시했습니다',
+      'STAR 기법을 잘 활용했습니다',
+    ],
+    improvements: [
+      '좀 더 간결하게 답변할 수 있을 것 같습니다',
+      '수치적 성과를 추가하면 더 좋겠습니다',
+    ],
+    modelAnswer: '모범 답안 예시가 여기에 표시됩니다...',
+  })) || [];
+
+  // 피드백 생성 중인 경우 로딩 UI 표시
+  if (feedbackStatus === 'processing' || feedbackStatus === 'pending' || feedbackStatus === 'loading') {
+    return <FeedbackLoadingUI progress={progress} status={feedbackStatus} />;
+  }
+
+  // 피드백 생성 실패한 경우
+  if (feedbackStatus === 'failed') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-text-primary mb-4">
+              피드백 생성 실패
+            </h2>
+            <p className="text-text-secondary mb-6">
+              {error || '피드백을 생성하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'}
+            </p>
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => window.location.reload()} 
+                className="flex-1 gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                다시 시도
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => router.back()}
+                className="flex-1"
+              >
+                돌아가기
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // 전사 데이터 로딩 중
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="mb-8">
+          <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-2" />
+          <div className="h-5 w-64 bg-gray-200 rounded animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-6">
+            <CardSkeleton />
+            <CardSkeleton />
+          </div>
+          <CardSkeleton />
+        </div>
+      </div>
+    );
+  }
+
+  // 피드백 데이터가 없는 경우
+  if (!feedback) {
+    return (
+      <div className="p-6">
+        <div className="text-center py-12">
+          <p className="text-danger mb-4">피드백 데이터를 찾을 수 없습니다.</p>
+          <Button onClick={() => router.back()}>돌아가기</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-8">
+        <Button variant="ghost" onClick={() => router.back()}>
+          <ArrowLeft className="w-4 h-4" />
+        </Button>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 mb-2">
+            <Badge variant="success">
+              면접 완료
+            </Badge>
+            <Badge variant="outline">
+              Session #{sessionId}
+            </Badge>
+          </div>
+          <h1 className="text-3xl font-bold text-text-primary">면접 피드백 리포트</h1>
+          <p className="text-text-secondary">
+            AI가 분석한 면접 결과와 개선 방향을 확인하세요
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" className="gap-2">
+            <Download className="w-4 h-4" />
+            리포트 다운로드
+          </Button>
+          <Button variant="outline" className="gap-2">
+            <Share className="w-4 h-4" />
+            공유하기
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* 메인 콘텐츠 */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* 종합 평가 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Star className="w-5 h-5 text-yellow-500" />
+                종합 평가
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center mb-6">
+                <div className={`text-6xl font-bold mb-2 ${getScoreColor(overallScore / 20)}`}>
+                  {overallScore.toFixed(1)}
+                </div>
+                <div className="text-lg text-text-secondary">/ 100점</div>
+                <div className={`inline-block px-4 py-2 rounded-full mt-2 ${getScoreBgColor(overallScore / 20)}`}>
+                  <span className={`font-medium ${getScoreColor(overallScore / 20)}`}>
+                    {overallScore >= 90 ? '우수' : overallScore >= 80 ? '양호' : overallScore >= 70 ? '보통' : '개선 필요'}
+                  </span>
+                </div>
+              </div>
+              
+              <div className="prose max-w-none">
+                <p className="text-text-secondary">{feedback.overall}</p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 강점과 개선점 */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-600">
+                  <CheckCircle className="w-5 h-5" />
+                  강점
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3">
+                  {feedback.strengths.map((strength: string, index: number) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-text-secondary">{strength}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-orange-600">
+                  <AlertCircle className="w-5 h-5" />
+                  개선점
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="space-y-3">
+                  {feedback.areas.map((area: string, index: number) => (
+                    <li key={index} className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm text-text-secondary">{area}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 모범 답안 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lightbulb className="w-5 h-5 text-yellow-500" />
+                모범 답안 예시
+              </CardTitle>
+              <CardDescription>
+                비슷한 질문에 대한 모범적인 답변 방식을 참고하세요
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="bg-blue-50 border border-blue-200 rounded-component p-4">
+                <p className="text-sm text-text-secondary whitespace-pre-wrap">
+                  {feedback.model_answer}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Q&A 다시보기 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="w-5 h-5" />
+                Q&A 다시보기
+              </CardTitle>
+              <CardDescription>
+                각 질문별 상세 평가와 개선 방향을 확인하세요
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Accordion type="single" collapsible className="space-y-4">
+                {qaFeedbacks.map((qa, index) => (
+                  <AccordionItem key={index} value={`qa-${index}`} className="border rounded-component p-4">
+                    <AccordionTrigger className="text-left hover:no-underline">
+                      <div className="flex items-center justify-between w-full pr-4">
+                        <div>
+                          <span className="text-lg font-medium">질문 {index + 1}</span>
+                          <p className="text-sm text-text-secondary mt-1 line-clamp-2">
+                            {qa.question}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex">
+                            {Array.from({ length: 5 }).map((_, i) => (
+                              <Star
+                                key={i}
+                                className={`w-4 h-4 ${
+                                  i < qa.score ? 'text-yellow-400 fill-current' : 'text-gray-300'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <span className="text-sm font-medium">{qa.score}/5</span>
+                        </div>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="space-y-4 pt-4">
+                      {/* 질문 */}
+                      <div>
+                        <h4 className="font-medium text-text-primary mb-2">질문</h4>
+                        <div className="bg-gray-50 p-3 rounded-component">
+                          <p className="text-sm text-text-secondary">{qa.question}</p>
+                        </div>
+                      </div>
+                      
+                      {/* 내 답변 */}
+                      <div>
+                        <h4 className="font-medium text-text-primary mb-2">내 답변</h4>
+                        <div className="bg-blue-50 p-3 rounded-component">
+                          <p className="text-sm text-text-secondary whitespace-pre-wrap">{qa.answer}</p>
+                        </div>
+                      </div>
+
+                      {/* 상세 평가 */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <h4 className="font-medium text-green-600 mb-2 flex items-center gap-1">
+                            <CheckCircle className="w-4 h-4" />
+                            잘한 점
+                          </h4>
+                          <ul className="space-y-1">
+                            {qa.strengths.map((strength, i) => (
+                              <li key={i} className="text-sm text-text-secondary flex items-start gap-1">
+                                <span className="text-green-500">•</span>
+                                {strength}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        
+                        <div>
+                          <h4 className="font-medium text-orange-600 mb-2 flex items-center gap-1">
+                            <AlertCircle className="w-4 h-4" />
+                            개선할 점
+                          </h4>
+                          <ul className="space-y-1">
+                            {qa.improvements.map((improvement, i) => (
+                              <li key={i} className="text-sm text-text-secondary flex items-start gap-1">
+                                <span className="text-orange-500">•</span>
+                                {improvement}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      {/* 모범 답안 */}
+                      <div>
+                        <h4 className="font-medium text-text-primary mb-2">모범 답안 예시</h4>
+                        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-component">
+                          <p className="text-sm text-text-secondary">{qa.modelAnswer}</p>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 사이드바 */}
+        <div className="space-y-6">
+          {/* 역량별 점수 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5" />
+                역량별 평가
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-64 mb-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadarChart data={mockEvaluationData}>
+                    <PolarGrid />
+                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
+                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} />
+                    <Radar
+                      name="점수"
+                      dataKey="A"
+                      stroke="#4A90E2"
+                      fill="#4A90E2"
+                      fillOpacity={0.3}
+                      strokeWidth={2}
+                    />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+              
+              <div className="space-y-3">
+                {mockEvaluationData.map((item, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <span className="text-sm text-text-secondary">{item.subject}</span>
+                    <div className="flex items-center gap-2">
+                      <Progress value={item.A} className="w-16 h-2" />
+                      <span className={`text-sm font-medium ${getScoreColor(item.A / 20)}`}>
+                        {item.A}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 성장 추이 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5" />
+                성장 추이
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center mb-4">
+                <div className="text-2xl font-bold text-green-600 mb-1">+12점</div>
+                <div className="text-sm text-text-secondary">이전 면접 대비</div>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-text-secondary">이번 면접</span>
+                  <span className="font-medium">{overallScore.toFixed(1)}점</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-text-secondary">이전 면접</span>
+                  <span className="text-text-secondary">{(overallScore - 12).toFixed(1)}점</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-text-secondary">첫 면접</span>
+                  <span className="text-text-secondary">{(overallScore - 25).toFixed(1)}점</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 다음 단계 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                다음 단계
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <MessageCircle className="w-4 h-4" />
+                  다시 면접 연습하기
+                </Button>
+                <Link href="/experiences/new">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <FileText className="w-4 h-4" />
+                    새 경험 추가하기
+                  </Button>
+                </Link>
+                <Link href="/jobs/new">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Target className="w-4 h-4" />
+                    새 공고 등록하기
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
