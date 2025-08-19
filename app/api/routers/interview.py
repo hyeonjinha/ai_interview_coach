@@ -52,10 +52,7 @@ def submit_answer(session_id: int, question_id: int, payload: SubmitAnswerReques
     return SubmitAnswerResponse(**data)
 
 
-@router.get("/{session_id}/feedback", response_model=FeedbackResponse)
-def interview_feedback(session_id: int, session: Session = Depends(get_session), user=Depends(get_current_user)):
-    report = generate_feedback(session, session_id)
-    return FeedbackResponse(**report)
+# 중복 정의 방지: 피드백 조회는 하단의 단일 엔드포인트를 사용
 
 
 @router.post("/{session_id}/answer/{question_id}/audio", response_model=SubmitAnswerResponse)
@@ -281,11 +278,14 @@ def get_transcript(session_id: int, session: Session = Depends(get_session), use
 
 
 @router.get("/", response_model=list[InterviewSessionSummary])
-def list_sessions(session: Session = Depends(get_session), user=Depends(get_current_user)):
+def list_sessions(include_legacy: bool = False, session: Session = Depends(get_session), user=Depends(get_current_user)):
     user_id = str(user.get("sub", "default"))
-    rows = session.exec(
-        select(InterviewSession).where(InterviewSession.user_id == user_id).order_by(InterviewSession.id.desc())
-    ).all()
+    if include_legacy:
+        from sqlalchemy import or_
+        q = select(InterviewSession).where(or_(InterviewSession.user_id == user_id, InterviewSession.user_id == "default"))
+    else:
+        q = select(InterviewSession).where(InterviewSession.user_id == user_id)
+    rows = session.exec(q.order_by(InterviewSession.id.desc())).all()
     data = [
         InterviewSessionSummary(
             id=r.id,

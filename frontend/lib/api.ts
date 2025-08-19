@@ -296,8 +296,8 @@ export const interviewApi = {
     return response.data;
   },
 
-  listSessions: async (): Promise<InterviewSessionSummary[]> => {
-    const response = await api.get('/interviews/');
+  listSessions: async (includeLegacy: boolean = false): Promise<InterviewSessionSummary[]> => {
+    const response = await api.get('/interviews/', { params: includeLegacy ? { include_legacy: true } : {} });
     return response.data;
   },
 };

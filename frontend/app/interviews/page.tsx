@@ -27,7 +27,7 @@ export default function InterviewsPage() {
 
   const { data: sessions, isLoading, error } = useQuery({
     queryKey: ['interview-sessions'],
-    queryFn: interviewApi.listSessions,
+    queryFn: () => interviewApi.listSessions(true),
   });
 
   // 필터링된 세션들
@@ -283,7 +283,7 @@ export default function InterviewsPage() {
                           </Button>
                         </Link>
                       ) : (
-                        <Link href={`/jobs/${session.job_posting_id}/interview`}>
+                        <Link href={`/interviews/${session.id}`}>
                           <Button size="sm">
                             계속하기
                           </Button>
