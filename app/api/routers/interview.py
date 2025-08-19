@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.models.db import get_session
@@ -14,6 +15,7 @@ from app.models.schemas import (
 )
 from app.services.agent_service import InterviewAgent
 from app.services.feedback_service import generate_feedback, generate_feedback_async
+from app.services.rag_service import retrieve_context, stream_question_from_context
 from app.queues.local_db import LocalDBQueue
 from app.services.stt_service import transcribe_audio_stub
 from app.api.deps import get_current_user
@@ -95,6 +97,26 @@ def end_interview(session_id: int, background_tasks: BackgroundTasks, session: S
     q.enqueue("generate_feedback", {"session_id": session_id})
     
     return {"message": "피드백 생성을 시작했습니다", "session_id": session_id, "report_id": feedback_report.id}
+
+
+@router.get("/{session_id}/next/stream")
+def next_question_stream(session_id: int, session: Session = Depends(get_session), user=Depends(get_current_user)):
+    """다음 질문(메인) 스트리밍. LangGraph 병렬 사전생성 없이도 체감 개선용.
+    현재 세션의 goal/컨텍스트를 조회하여 스트리밍으로 질문을 전송한다.
+    """
+    # 세션/라운드 정보 조회
+    s = session.get(InterviewSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+
+    goal = "다음 핵심 역량을 검증" if (s.current_round or 0) > 0 else "선택된 경험과 공고 우대사항을 바탕으로 핵심 역량을 검증"
+    ctx = retrieve_context(goal, top_k=6)
+
+    def generator():
+        for chunk in stream_question_from_context(goal, ctx, round_index=s.current_round or 0):
+            yield chunk
+
+    return StreamingResponse(generator(), media_type="text/plain; charset=utf-8")
 
 
 @router.get("/{session_id}/feedback/status")

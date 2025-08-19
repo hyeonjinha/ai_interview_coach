@@ -42,7 +42,7 @@ def retrieve_context(question: str, top_k: int = 6) -> List[str]:
     return docs or []
 
 
-def generate_question_from_context(goal: str, context_chunks: List[str], round_index: Optional[int] = None) -> str:
+def _build_question_messages(goal: str, context_chunks: List[str], round_index: Optional[int] = None) -> List[Dict[str, str]]:
     """컨텍스트 기반 메인 질문 생성.
 
     규칙:
@@ -51,7 +51,6 @@ def generate_question_from_context(goal: str, context_chunks: List[str], round_i
     - 무엇/왜/어떻게/결과(수치) 중 최소 2개 축 포함
     - 라운드에 따라 난이도 조정
     """
-    llm = get_llm()
     context = "\n\n".join(context_chunks[:6])
 
     # 라운드 기반 난이도 안내
@@ -83,9 +82,25 @@ def generate_question_from_context(goal: str, context_chunks: List[str], round_i
         "- 하나의 핵심만 묻기.\n\n"
         "출력: 질문 문장만 반환."
     )
-    out = llm.chat([
+    return [
         {"role": "system", "content": sys},
         {"role": "user", "content": usr},
-    ])
+    ]
+
+
+def generate_question_from_context(goal: str, context_chunks: List[str], round_index: Optional[int] = None) -> str:
+    llm = get_llm()
+    messages = _build_question_messages(goal, context_chunks, round_index)
+    out = llm.chat(messages)
     return out.strip()
+
+
+def stream_question_from_context(goal: str, context_chunks: List[str], round_index: Optional[int] = None):
+    """컨텍스트 기반 메인 질문 스트리밍 생성기.
+    get_llm().chat_stream을 사용해 토큰 단위로 반환합니다.
+    """
+    llm = get_llm()
+    messages = _build_question_messages(goal, context_chunks, round_index)
+    for chunk in llm.chat_stream(messages):
+        yield chunk
 
