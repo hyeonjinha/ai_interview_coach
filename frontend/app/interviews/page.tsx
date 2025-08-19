@@ -291,11 +291,6 @@ export default function InterviewsPage() {
                         </Link>
                       )}
                       
-                      <Link href={`/interviews/${session.id}/feedback`}>
-                        <Button variant="ghost" size="sm" className="text-text-secondary">
-                          대화 기록
-                        </Button>
-                      </Link>
                       <DeleteButton sessionId={session.id} onDeleted={() => qc.invalidateQueries({ queryKey: ['interview-sessions'] })} />
                     </div>
                   </div>
