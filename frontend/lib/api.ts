@@ -165,6 +165,88 @@ export const interviewApi = {
     return response.data;
   },
 
+  // SSE 스트리밍: 답변 제출 → 평가 이벤트 즉시 → 질문 토큰 스트리밍
+  submitAnswerStream: async (
+    sessionId: number,
+    questionId: number,
+    answer: string,
+    handlers: {
+      onEvaluation?: (payload: { rating: string; notes: any }) => void;
+      onChunk?: (textChunk: string) => void;
+      onEnd?: (meta: { question_id: number; question_type: string; round_index: number }) => void;
+      onError?: (error: any) => void;
+    }
+  ): Promise<() => void> => {
+    const controller = new AbortController();
+    const signal = controller.signal;
+
+    try {
+      const res = await fetch(
+        `${api.defaults.baseURL}/interviews/${sessionId}/answer/${questionId}/stream`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            // 인증 토큰 헤더 붙이기
+            ...(api.defaults.headers.common as any),
+          },
+          body: JSON.stringify({ answer }),
+          signal,
+        }
+      );
+
+      if (!res.body) throw new Error('No response body for SSE');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+      let currentEvent: string | null = null;
+
+      const processBuffer = () => {
+        const messages = buffer.split('\n\n');
+        // 마지막은 불완전할 수 있으니 남겨둔다
+        buffer = messages.pop() || '';
+        for (const msg of messages) {
+          if (!msg.trim()) continue;
+          let dataLine: string | null = null;
+          currentEvent = null;
+          for (const line of msg.split('\n')) {
+            if (line.startsWith('event:')) currentEvent = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataLine = (dataLine || '') + line.slice(5).trim();
+          }
+          if (!dataLine) continue;
+          try {
+            const payload = JSON.parse(dataLine);
+            if (currentEvent === 'evaluation') handlers.onEvaluation?.(payload);
+            else if (currentEvent === 'question_chunk') handlers.onChunk?.(payload.content || '');
+            else if (currentEvent === 'question_end') handlers.onEnd?.(payload);
+            else if (currentEvent === 'done') {
+              // ignore; caller will stop when onEnd fired
+            }
+          } catch (e) {
+            handlers.onError?.(e);
+          }
+        }
+      };
+
+      (async () => {
+        try {
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            processBuffer();
+          }
+        } catch (e) {
+          handlers.onError?.(e);
+        }
+      })();
+    } catch (e) {
+      handlers.onError?.(e);
+    }
+
+    return () => controller.abort();
+  },
+
   submitAnswerAudio: async (
     sessionId: number,
     questionId: number,

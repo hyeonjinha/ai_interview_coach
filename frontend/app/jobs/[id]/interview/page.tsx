@@ -75,22 +75,41 @@ export default function InterviewPage() {
     },
   });
 
-  // 답변 제출 mutation
+  // 답변 제출 (SSE 스트리밍)
+  const [streamingQuestion, setStreamingQuestion] = useState('');
   const submitAnswerMutation = useMutation({
-    mutationFn: ({ answer }: { answer: string }) => {
-      return interviewApi.submitAnswer(sessionId!, currentQuestionId!, { answer });
-    },
-    onSuccess: (data) => {
-      addAnswer(currentAnswer, data);
-      setCurrentAnswer('');
-      
-      if (data.next_action === 'next_question') {
-        setLoading(true);
-        nextQuestionMutation.mutate();
-      } else if (data.next_action === 'end') {
-        endSession();
-        router.push(`/interviews/${sessionId}/feedback`);
-      }
+    mutationFn: async ({ answer }: { answer: string }) => {
+      setStreamingQuestion('');
+      setLoading(true);
+      return await interviewApi.submitAnswerStream(
+        sessionId!,
+        currentQuestionId!,
+        answer,
+        {
+          onEvaluation: (payload) => {
+            // 평가를 먼저 반영
+            addAnswer(answer, payload as any);
+            setCurrentAnswer('');
+          },
+          onChunk: (chunk) => {
+            setStreamingQuestion((prev) => prev + chunk);
+          },
+          onEnd: (meta) => {
+            // 다음 질문을 대화에 추가
+            addQuestion({
+              question: streamingQuestion || '다음 질문을 불러오지 못했습니다.',
+              question_id: meta.question_id,
+              question_type: meta.question_type,
+              round_index: meta.round_index,
+            } as any);
+            setStreamingQuestion('');
+            setLoading(false);
+          },
+          onError: () => {
+            setLoading(false);
+          },
+        }
+      );
     },
   });
 
@@ -237,6 +256,18 @@ export default function InterviewPage() {
                           {getLoadingMessage('generating')}
                         </span>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {!!streamingQuestion && (
+                <div className="flex justify-start">
+                  <div className="bg-gray-100 p-4 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
+                        <MessageCircle className="w-4 h-4" />
+                      </div>
+                      <span className="text-sm whitespace-pre-wrap">{streamingQuestion}</span>
                     </div>
                   </div>
                 </div>
