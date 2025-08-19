@@ -245,6 +245,68 @@ export default function FeedbackPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 메인 콘텐츠 */}
         <div className="lg:col-span-2 space-y-6">
+          {/* 면접 타임라인 */}
+          {transcript?.items && transcript.items.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5" />
+                  면접 타임라인 (라운드별 흐름)
+                </CardTitle>
+                <CardDescription>
+                  메인 질문과 꼬리 질문의 진행 흐름을 라운드별로 확인하세요
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-6">
+                  {Object.entries(
+                    transcript.items.reduce((acc: Record<number, any[]>, item: any) => {
+                      const r = item.round ?? 0;
+                      if (!acc[r]) acc[r] = [];
+                      acc[r].push(item);
+                      return acc;
+                    }, {})
+                  ).map(([round, items]) => (
+                    <div key={round}>
+                      <div className="flex items-center gap-2 mb-3">
+                        <Badge variant="outline">Round {round}</Badge>
+                      </div>
+                      <div className="space-y-3">
+                        {(items as any[]).map((it, idx) => (
+                          <div key={idx} className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                              it.type === 'main' ? 'bg-blue-100' : 'bg-gray-200'
+                            }`}>
+                              <MessageCircle className={`w-4 h-4 ${it.type === 'main' ? 'text-blue-600' : 'text-gray-600'}`} />
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-sm text-text-secondary">
+                                <span className="font-medium mr-2">{it.type === 'main' ? '메인' : '꼬리'}</span>
+                                <span className="text-text-primary">{it.question}</span>
+                              </div>
+                              {it.answer && (
+                                <div className="mt-2 bg-blue-50 p-3 rounded-component">
+                                  <div className="text-xs text-text-secondary whitespace-pre-wrap">{it.answer}</div>
+                                </div>
+                              )}
+                              {it.evaluation && (
+                                <div className="mt-2 text-xs text-text-secondary">
+                                  <span className="mr-2">평가: {it.evaluation.rating}</span>
+                                  {it.evaluation.notes?.hints && it.evaluation.notes.hints.length > 0 && (
+                                    <span className="opacity-80">힌트: {it.evaluation.notes.hints.join('; ')}</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
           {/* 종합 평가 */}
           <Card>
             <CardHeader>
