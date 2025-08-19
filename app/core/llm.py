@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterator, AsyncIterator
 from functools import lru_cache
+import os
+import time
+import asyncio
 
 from app.core.config import get_settings
 
@@ -9,6 +12,23 @@ from app.core.config import get_settings
 class LLMService:
     def chat(self, messages: List[Dict[str, str]]) -> str:
         raise NotImplementedError
+    
+    def chat_stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
+        """스트리밍 채팅 (기본 구현: 토큰 단위 분할)"""
+        response = self.chat(messages)
+        # 간단한 토큰 분할 (실제로는 LLM API의 스트리밍 사용)
+        words = response.split()
+        for word in words:
+            yield word + " "
+            time.sleep(0.05)  # 자연스러운 타이핑 효과
+    
+    async def chat_stream_async(self, messages: List[Dict[str, str]]) -> AsyncIterator[str]:
+        """비동기 스트리밍 채팅"""
+        response = self.chat(messages)
+        words = response.split()
+        for word in words:
+            yield word + " "
+            await asyncio.sleep(0.05)
 
 
 class OpenAILLMService(LLMService):
@@ -21,25 +41,50 @@ class OpenAILLMService(LLMService):
     def chat(self, messages: List[Dict[str, str]]) -> str:
         resp = self.client.chat.completions.create(model=self.model, messages=messages)
         return (resp.choices[0].message.content or "").strip()
-
-
-class HeuristicLLMService(LLMService):
-    def chat(self, messages: List[Dict[str, str]]) -> str:
-        # Very naive fallback that echoes simple guidance based on last user message
-        last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        if not last_user:
-            return "정보가 부족합니다. 경험이나 공고 정보를 더 제공해주세요."
-        if "정량" in last_user or any(ch.isdigit() for ch in last_user):
-            return "답변이 비교적 명확합니다. 다음 질문으로 넘어가겠습니다."
-        if "왜" in last_user or "because" in last_user.lower():
-            return "기술 선택의 이유 설명이 일부 포함되어 있습니다. 조금 더 근거를 보강해보세요."
-        return "핵심이 다소 모호합니다. STAR 구조와 정량적 성과를 포함해 다시 설명해보세요."
+    
+    def chat_stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
+        """OpenAI 스트리밍 지원"""
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.model, 
+                messages=messages, 
+                stream=True
+            )
+            
+            for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+        except Exception as e:
+            # 스트리밍 실패 시 일반 응답으로 fallback
+            fallback_response = self.chat(messages)
+            yield fallback_response
 
 
 @lru_cache
 def get_llm() -> LLMService:
     settings = get_settings()
-    if settings.openai_api_key:
-        return OpenAILLMService(model=settings.llm_model)
-    return HeuristicLLMService()
+    if not settings.openai_api_key:
+        raise ValueError(
+            "OpenAI API 키가 설정되지 않았습니다.\n"
+            "1. .env 파일에 OPENAI_API_KEY를 설정하세요\n"
+            "2. 또는 환경 변수로 OPENAI_API_KEY를 설정하세요\n"
+            "3. https://platform.openai.com/api-keys 에서 API 키를 발급받으세요"
+        )
+    return OpenAILLMService(model=settings.llm_model)
+
+
+def setup_langsmith():
+    """LangSmith 설정 (선택사항)"""
+    try:
+        if os.getenv("LANGCHAIN_TRACING_V2") == "true":
+            os.environ["LANGCHAIN_TRACING_V2"] = "true"
+            os.environ["LANGCHAIN_ENDPOINT"] = os.getenv("LANGCHAIN_ENDPOINT", "https://api.smith.langchain.com")
+            os.environ["LANGCHAIN_API_KEY"] = os.getenv("LANGCHAIN_API_KEY", "")
+            os.environ["LANGCHAIN_PROJECT"] = os.getenv("LANGCHAIN_PROJECT", "ai-interview-coach")
+            print("✅ LangSmith 설정 완료")
+        else:
+            print("ℹ️ LangSmith 설정 건너뜀 (LANGCHAIN_TRACING_V2=false)")
+    except Exception as e:
+        print(f"⚠️ LangSmith 설정 실패: {e}")
+        print("ℹ️ LangSmith 없이 계속 진행합니다")
 

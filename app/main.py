@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.core.config import get_settings
+from app.core.llm import setup_langsmith
 from app.models.db import create_db_and_tables
 from app.api.routers.health import router as health_router
 from app.api.routers.experiences import router as experiences_router
@@ -16,9 +17,13 @@ from app.api.routers.dashboard import router as dashboard_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    print("🚀 AI Interview Coach 시작 중...")
     create_db_and_tables()
+    setup_langsmith()  # LangSmith 설정 초기화
+    print("✅ AI Interview Coach 시작 완료!")
     yield
     # Shutdown
+    print("👋 AI Interview Coach 종료 중...")
 
 
 settings = get_settings()

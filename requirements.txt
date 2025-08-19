@@ -1,20 +1,34 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.1
-pydantic==2.8.2
-pydantic-settings==2.3.4
-sqlmodel==0.0.16
-SQLAlchemy==2.0.32
-sentence-transformers==2.6.1
-numpy==1.26.4
-openai==1.42.0
-psycopg[binary]==3.2.1
-pgvector==0.2.5
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-dotenv==1.0.1
-httpx==0.27.0
-requests==2.32.3
-tenacity==8.5.0
-beautifulsoup4==4.12.3
-python-multipart==0.0.9
+# Core Framework
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+
+# Database
+sqlmodel
+SQLAlchemy
+psycopg[binary]
+pgvector
+
+# AI/ML
+openai
+sentence-transformers
+numpy
+
+# Authentication & Security
+python-jose[cryptography]
+passlib[bcrypt]
+
+# Utilities
+python-dotenv
+httpx
+requests
+tenacity
+beautifulsoup4
+python-multipart
+
+# LangGraph & LangSmith (최신 버전 자동 설치)
+langgraph
+langsmith
+langchain
 
