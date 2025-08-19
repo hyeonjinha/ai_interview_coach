@@ -16,6 +16,11 @@ from app.models.schemas import (
 from app.services.agent_service import InterviewAgent
 from app.services.feedback_service import generate_feedback, generate_feedback_async
 from app.services.rag_service import retrieve_context, stream_question_from_context
+from app.core.llm import get_llm
+from app.core.config import get_settings
+from app.services.prompts import llm_eval_prompt
+import json
+from typing import Dict, Any
 from app.queues.local_db import LocalDBQueue
 from app.services.stt_service import transcribe_audio_stub
 from app.api.deps import get_current_user
@@ -117,6 +122,104 @@ def next_question_stream(session_id: int, session: Session = Depends(get_session
             yield chunk
 
     return StreamingResponse(generator(), media_type="text/plain; charset=utf-8")
+
+
+@router.post("/{session_id}/answer/{question_id}/stream")
+def submit_answer_stream(
+    session_id: int,
+    question_id: int,
+    payload: SubmitAnswerRequest,
+    session: Session = Depends(get_session),
+    user=Depends(get_current_user),
+):
+    """답변 평가 후 다음 질문을 SSE로 스트리밍 전송."""
+    s = session.get(InterviewSession, session_id)
+    q = session.get(InterviewQuestion, question_id)
+    if not s or not q:
+        raise HTTPException(status_code=404, detail="Invalid session or question")
+
+    settings = get_settings()
+    llm = get_llm()
+
+    def sse(msg: Dict[str, Any], event: str | None = None) -> bytes:
+        prefix = f"event: {event}\n" if event else ""
+        return (prefix + f"data: {json.dumps(msg, ensure_ascii=False)}\n\n").encode("utf-8")
+
+    def generator():
+        # 1) 평가
+        messages = llm_eval_prompt(q.text, payload.answer)
+        raw = llm.chat(messages)
+        rating = "VAGUE"
+        notes: Dict[str, Any] = {"summary": raw, "hints": []}
+        try:
+            import re
+            match = re.search(r"\{[\s\S]*\}", raw)
+            payload_json = match.group(0) if match else raw
+            parsed = json.loads(payload_json)
+            rating = parsed.get("rating", rating)
+            notes = parsed.get("notes", notes)
+        except Exception:
+            pass
+
+        # 답변 저장
+        ans = InterviewAnswer(
+            session_id=session_id,
+            question_id=question_id,
+            answer_text=payload.answer,
+            evaluation={"rating": rating, "notes": notes},
+        )
+        session.add(ans)
+        session.commit()
+
+        # 평가 이벤트 전송
+        yield sse({"rating": rating, "notes": notes}, event="evaluation")
+
+        # 2) 분기 결정
+        follow_up_count = s.follow_up_count or 0
+        route = "NEXT_ROUND"
+        if rating != "GOOD" and follow_up_count < settings.max_follow_ups:
+            route = "FOLLOW_UP"
+
+        # 3) 질문 스트리밍/생성 및 저장
+        yield b"event: question_start\n\n"
+        if route == "FOLLOW_UP":
+            hint_text = "; ".join(notes.get("hints", [])[:2]) if notes.get("hints") else "성과를 정량적으로 제시하고, 기술 선택의 이유를 설명해주세요."
+            q2 = InterviewQuestion(
+                session_id=session_id,
+                round_index=s.current_round or 0,
+                question_type="follow_up",
+                text=hint_text,
+                parent_question_id=question_id,
+            )
+            s.follow_up_count = follow_up_count + 1
+            session.add(q2); session.add(s); session.commit(); session.refresh(q2)
+
+            yield sse({"content": hint_text}, event="question_chunk")
+            yield sse({"question_id": q2.id, "question_type": q2.question_type, "round_index": q2.round_index}, event="question_end")
+        else:
+            goal = "다음 핵심 역량을 검증" if (s.current_round or 0) > 0 else "선택된 경험과 공고 우대사항을 바탕으로 핵심 역량을 검증"
+            ctx = retrieve_context(goal, top_k=6)
+            full = []
+            for chunk in stream_question_from_context(goal, ctx, round_index=s.current_round or 0):
+                full.append(chunk)
+                yield sse({"content": chunk}, event="question_chunk")
+
+            text = ("".join(full)).strip()
+            s.current_round = (s.current_round or 0) + 1
+            s.follow_up_count = 0
+            q2 = InterviewQuestion(
+                session_id=session_id,
+                round_index=s.current_round,
+                question_type="main",
+                text=text,
+            )
+            session.add(q2); session.add(s); session.commit(); session.refresh(q2)
+
+            yield sse({"question_id": q2.id, "question_type": q2.question_type, "round_index": q2.round_index}, event="question_end")
+
+        yield b"event: done\n\n"
+
+    return StreamingResponse(generator(), media_type="text/event-stream")
 
 
 @router.get("/{session_id}/feedback/status")
