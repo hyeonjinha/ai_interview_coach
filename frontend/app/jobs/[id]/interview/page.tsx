@@ -86,9 +86,7 @@ export default function InterviewPage() {
       
       if (data.next_action === 'next_question') {
         setLoading(true);
-        setTimeout(() => {
-          nextQuestionMutation.mutate();
-        }, 1000);
+        nextQuestionMutation.mutate();
       } else if (data.next_action === 'end') {
         endSession();
         router.push(`/interviews/${sessionId}/feedback`);
