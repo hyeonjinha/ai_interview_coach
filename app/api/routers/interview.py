@@ -12,6 +12,7 @@ from app.models.schemas import (
     SubmitAnswerResponse,
     FeedbackResponse,
     InterviewSessionSummary,
+    InterviewSessionDetail,
 )
 from app.services.agent_service import InterviewAgent
 from app.services.feedback_service import generate_feedback, generate_feedback_async
@@ -299,4 +300,56 @@ def list_sessions(include_legacy: bool = False, session: Session = Depends(get_s
         for r in rows
     ]
     return data
+
+
+@router.get("/{session_id}", response_model=InterviewSessionDetail)
+def get_session_detail(session_id: int, session: Session = Depends(get_session), user=Depends(get_current_user)):
+    s = session.get(InterviewSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    # 권한 확인(동일 사용자 또는 legacy default 허용)
+    uid = str(user.get("sub", "default"))
+    if s.user_id not in (uid, "default"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # 마지막 질문 텍스트(있으면)
+    last_q = session.exec(
+        select(InterviewQuestion).where(InterviewQuestion.session_id == session_id).order_by(InterviewQuestion.id.desc())
+    ).first()
+
+    return InterviewSessionDetail(
+        id=s.id,
+        user_id=s.user_id,
+        job_posting_id=s.job_posting_id,
+        status=s.status,
+        current_round=s.current_round,
+        follow_up_count=s.follow_up_count,
+        created_at=s.created_at,
+        last_question=(last_q.text if last_q else None),
+    )
+
+
+@router.delete("/{session_id}")
+def delete_session(session_id: int, session: Session = Depends(get_session), user=Depends(get_current_user)):
+    s = session.get(InterviewSession, session_id)
+    if not s:
+        raise HTTPException(status_code=404, detail="Interview session not found")
+    uid = str(user.get("sub", "default"))
+    if s.user_id not in (uid, "default"):
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    # 관련 데이터 삭제(answers, questions, feedback)
+    answers = session.exec(select(InterviewAnswer).where(InterviewAnswer.session_id == session_id)).all()
+    for a in answers:
+        session.delete(a)
+    questions = session.exec(select(InterviewQuestion).where(InterviewQuestion.session_id == session_id)).all()
+    for q in questions:
+        session.delete(q)
+    reports = session.exec(select(FeedbackReport).where(FeedbackReport.session_id == session_id)).all()
+    for r in reports:
+        session.delete(r)
+
+    session.delete(s)
+    session.commit()
+    return {"ok": True}
 

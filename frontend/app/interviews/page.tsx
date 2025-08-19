@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { 
   MessageCircle, 
@@ -22,6 +22,7 @@ import { interviewApi } from '@/lib/api';
 import { formatDate, formatRelativeTime, getStatusText, getStatusBadgeStyle } from '@/lib/utils';
 
 export default function InterviewsPage() {
+  const qc = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
 
@@ -290,11 +291,12 @@ export default function InterviewsPage() {
                         </Link>
                       )}
                       
-                      <Link href={`/interviews/${session.id}`}>
+                      <Link href={`/interviews/${session.id}/feedback`}>
                         <Button variant="ghost" size="sm" className="text-text-secondary">
-                          전사 보기
+                          대화 기록
                         </Button>
                       </Link>
+                      <DeleteButton sessionId={session.id} onDeleted={() => qc.invalidateQueries({ queryKey: ['interview-sessions'] })} />
                     </div>
                   </div>
                 </CardContent>
@@ -304,6 +306,26 @@ export default function InterviewsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function DeleteButton({ sessionId, onDeleted }: { sessionId: number; onDeleted: () => void }) {
+  const deleteMutation = useMutation({
+    mutationFn: () => interviewApi.deleteSession(sessionId),
+    onSuccess: () => onDeleted(),
+  });
+  return (
+    <Button
+      variant="destructive"
+      size="sm"
+      onClick={() => {
+        if (confirm('정말 이 면접 내역을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
+          deleteMutation.mutate();
+        }
+      }}
+    >
+      삭제
+    </Button>
   );
 }
 

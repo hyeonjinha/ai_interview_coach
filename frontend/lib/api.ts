@@ -300,6 +300,16 @@ export const interviewApi = {
     const response = await api.get('/interviews/', { params: includeLegacy ? { include_legacy: true } : {} });
     return response.data;
   },
+
+  getSession: async (sessionId: number): Promise<{ id: number; job_posting_id: number; status: string; last_question?: string } & any> => {
+    const response = await api.get(`/interviews/${sessionId}`);
+    return response.data;
+  },
+
+  deleteSession: async (sessionId: number): Promise<{ ok: boolean }> => {
+    const response = await api.delete(`/interviews/${sessionId}`);
+    return response.data;
+  },
 };
 
 export default api;
