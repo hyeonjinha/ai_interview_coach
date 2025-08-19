@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -26,11 +26,13 @@ class Settings(BaseSettings):
     max_follow_ups: int = 3
     frontend_origin: str | None = None
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        env_prefix = ""
-        case_sensitive = False
+    # pydantic-settings v2 스타일 설정
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",  # 정의되지 않은 환경변수 무시 (LANGSMITH, DATABASE_URL 등)
+    )
 
 
 @lru_cache
