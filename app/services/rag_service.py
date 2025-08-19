@@ -36,10 +36,35 @@ def index_documents(docs: List[Dict[str, Any]]) -> None:
 
 
 def retrieve_context(question: str, top_k: int = 6) -> List[str]:
+    """질문 의도에 맞게 재랭킹된 컨텍스트를 반환.
+
+    우선순위 가중치:
+    - 공고 섹션(Responsibilities/Requirements/Preferences): +0.3
+    - 경험 핵심 영역(title/핵심 섹션 키): +0.2
+    """
     vs = VectorStore(collection_name="interview_kb")
-    res = vs.query(question, n_results=top_k)
+    res = vs.query(question, n_results=top_k * 2)
     docs = res.get("documents", [[]])[0]
-    return docs or []
+    metas = res.get("metadatas", [[]])[0]
+
+    scored: List[tuple[float, str]] = []
+    for doc, meta in zip(docs or [], metas or []):
+        score = 1.0
+        mtype = (meta or {}).get("type")
+        section = (meta or {}).get("section", "")
+        if mtype == "job" and section.lower() in {"responsibilities", "requirements", "preferences"}:
+            score += 0.3
+        if mtype == "experience":
+            # 제목/핵심 키워드 힌트
+            text = (doc or "").lower()
+            if any(k in text for k in ["[experience title]", "성과", "임팩트", "기술선택"]):
+                score += 0.2
+        scored.append((score, doc))
+
+    # 점수 정렬 후 상위 top_k
+    scored.sort(key=lambda x: x[0], reverse=True)
+    reranked = [d for _, d in scored[:top_k]]
+    return reranked
 
 
 def _build_question_messages(goal: str, context_chunks: List[str], round_index: Optional[int] = None) -> List[Dict[str, str]]:
