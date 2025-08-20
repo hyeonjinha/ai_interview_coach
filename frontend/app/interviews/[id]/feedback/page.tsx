@@ -203,7 +203,6 @@ export default function FeedbackPage() {
   
   // 타임라인 필터 상태
   const [timelineFilter, setTimelineFilter] = useState<'all' | 'main' | 'follow_up'>('all');
-  const [showOnlyGood, setShowOnlyGood] = useState(false);
   const [expandedRounds, setExpandedRounds] = useState<Set<number>>(new Set([0])); // 첫 번째 라운드는 기본 펼침
 
   // 피드백 상태 폴링
@@ -395,13 +394,13 @@ export default function FeedbackPage() {
         </div>
       </div>
 
-      {/* TL;DR 요약 블록 */}
+      {/* 핵심 요약 블록 */}
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* 평가 항목별 배지 */}
             <div className="text-center">
-              <h3 className="font-semibold text-blue-900 mb-3">평가 항목별 배지</h3>
+              <h3 className="font-semibold text-blue-900 mb-3">평가 결과</h3>
               <div className="flex flex-wrap justify-center gap-2">
                 {(() => {
                   const evaluations = transcript?.items
@@ -422,10 +421,10 @@ export default function FeedbackPage() {
             <div>
               <h3 className="font-semibold text-blue-900 mb-3">핵심 강점</h3>
               <div className="space-y-2">
-                {feedback.strengths?.slice(0, 2).map((strength: string, index: number) => (
-                  <div key={index} className="flex items-center gap-2 text-sm text-blue-800">
-                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                    <span className="line-clamp-2">{strength}</span>
+                {feedback.strengths?.slice(0, 3).map((strength: string, index: number) => (
+                  <div key={index} className="flex items-start gap-2 text-sm text-blue-800">
+                    <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                    <span className="line-clamp-2 leading-relaxed">{strength}</span>
                   </div>
                 ))}
               </div>
@@ -433,294 +432,287 @@ export default function FeedbackPage() {
             
             {/* 즉시 실행 액션 */}
             <div>
-              <h3 className="font-semibold text-blue-900 mb-3">즉시 실행</h3>
+              <h3 className="font-semibold text-blue-900 mb-3">개선 액션</h3>
               <div className="space-y-2">
                 {feedback.areas?.slice(0, 3).map((area: string, index: number) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <div key={index} className="flex items-start gap-2">
                     <input 
                       type="checkbox" 
                       id={`action-${index}`}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 mt-0.5"
                     />
-                    <label htmlFor={`action-${index}`} className="text-sm text-blue-800 cursor-pointer line-clamp-2">
+                    <label htmlFor={`action-${index}`} className="text-sm text-blue-800 cursor-pointer line-clamp-2 leading-relaxed">
                       {area}
                     </label>
                   </div>
                 ))}
               </div>
             </div>
+
+            {/* 전체 성과 */}
+            <div className="text-center">
+              <h3 className="font-semibold text-blue-900 mb-3">전체 성과</h3>
+              <div className="text-2xl font-bold text-blue-600 mb-2">
+                {(() => {
+                  const evaluations = transcript?.items
+                    ?.filter((item: any) => item.evaluation)
+                    ?.map((item: any) => item.evaluation) || [];
+                  const badges = calculateDimensionScores(evaluations);
+                  const goldCount = Object.values(badges).filter(score => score === 'gold').length;
+                  const totalCount = Object.keys(badges).length;
+                  return `${goldCount}/${totalCount}`;
+                })()} 우수
+              </div>
+              <div className="text-sm text-blue-700">항목 중</div>
+            </div>
           </div>
         </CardContent>
       </Card>
 
+      {/* 통합 Q&A 타임라인 */}
+      {transcript?.items && transcript.items.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageCircle className="w-5 h-5" />
+                  면접 Q&A 타임라인
+                </CardTitle>
+                <CardDescription>
+                  모든 질문, 답변, 평가를 한 곳에서 확인하세요
+                </CardDescription>
+              </div>
+              
+              {/* 간단한 필터 */}
+              <div className="flex items-center gap-3">
+                <select
+                  value={timelineFilter}
+                  onChange={(e) => setTimelineFilter(e.target.value as any)}
+                  className="text-sm border border-gray-300 rounded px-3 py-1 bg-white"
+                >
+                  <option value="all">전체</option>
+                  <option value="main">메인만</option>
+                  <option value="follow_up">꼬리만</option>
+                </select>
+                
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (expandedRounds.size === 0) {
+                      const allRounds = new Set(
+                        Object.keys(
+                          transcript.items.reduce((acc: Record<number, any[]>, item: any) => {
+                            const r = item.round ?? 0;
+                            if (!acc[r]) acc[r] = [];
+                            acc[r].push(item);
+                            return acc;
+                          }, {})
+                        ).map(Number)
+                      );
+                      setExpandedRounds(allRounds);
+                    } else {
+                      setExpandedRounds(new Set());
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  {expandedRounds.size === 0 ? '모두 펼치기' : '모두 접기'}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Object.entries(
+                transcript.items
+                  .filter((item: any) => {
+                    if (timelineFilter === 'main' && item.type !== 'main') return false;
+                    if (timelineFilter === 'follow_up' && item.type !== 'follow_up') return false;
+                    return true;
+                  })
+                  .reduce((acc: Record<number, any[]>, item: any) => {
+                    const r = item.round ?? 0;
+                    if (!acc[r]) acc[r] = [];
+                    acc[r].push(item);
+                    return acc;
+                  }, {})
+              ).map(([round, items]) => {
+                const roundNum = parseInt(round);
+                const isExpanded = expandedRounds.has(roundNum);
+                
+                return (
+                  <div key={round} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div 
+                      className="flex items-center justify-between p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => {
+                        const newExpanded = new Set(expandedRounds);
+                        if (isExpanded) {
+                          newExpanded.delete(roundNum);
+                        } else {
+                          newExpanded.add(roundNum);
+                        }
+                        setExpandedRounds(newExpanded);
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="text-sm">Round {round}</Badge>
+                        <span className="text-sm text-text-secondary">
+                          {items.length}개 질문
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-text-secondary">
+                          {isExpanded ? '접기' : '펼치기'}
+                        </span>
+                        <div className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                          ▼
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {isExpanded && (
+                      <div className="p-4 space-y-4">
+                        {(items as any[]).map((it, idx) => (
+                          <div key={idx} className="border-l-4 border-blue-200 pl-4">
+                            {/* 질문 */}
+                            <div className="mb-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Badge 
+                                  variant="outline" 
+                                  className={`text-xs ${
+                                    it.type === 'main' ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-gray-100 text-gray-700 border-gray-300'
+                                  }`}
+                                >
+                                  {it.type === 'main' ? '메인' : '꼬리'}
+                                </Badge>
+                                {it.evaluation && (
+                                  (() => {
+                                    const config = getRatingConfig(it.evaluation.rating);
+                                    const IconComponent = config.icon;
+                                    return (
+                                      <Badge className={`${config.color} border text-xs`}>
+                                        <IconComponent className="w-3 h-3 mr-1" />
+                                        {config.label}
+                                      </Badge>
+                                    );
+                                  })()
+                                )}
+                              </div>
+                              <div className="text-sm text-text-primary leading-relaxed">
+                                {it.question}
+                              </div>
+                            </div>
+                            
+                            {/* 답변 */}
+                            {it.answer && (
+                              <div className="mb-3">
+                                <div className="text-xs text-text-secondary mb-1">답변:</div>
+                                <div className="bg-blue-50 p-3 rounded-lg">
+                                  <div className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
+                                    {it.answer}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* 평가 및 피드백 */}
+                            {it.evaluation && (
+                              <div className="space-y-3">
+                                {/* Missing Dimensions */}
+                                {it.evaluation.notes?.missing_dims && it.evaluation.notes.missing_dims.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-text-secondary mb-2">부족한 요소:</div>
+                                    <MissingDimsChips missingDims={it.evaluation.notes.missing_dims} />
+                                  </div>
+                                )}
+                                
+                                {/* 액션 아이템 */}
+                                {it.evaluation.notes?.hints && it.evaluation.notes.hints.length > 0 && (
+                                  <div>
+                                    <div className="text-xs text-text-secondary mb-2">개선 액션:</div>
+                                    <ActionItems hints={it.evaluation.notes.hints} />
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 종합 피드백 및 다음 단계 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 메인 콘텐츠 */}
         <div className="lg:col-span-2 space-y-6">
-          {/* 면접 타임라인 */}
-          {transcript?.items && transcript.items.length > 0 && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="flex items-center gap-2">
-                      <MessageCircle className="w-5 h-5" />
-                      면접 타임라인 (라운드별 흐름)
-                    </CardTitle>
-                    <CardDescription>
-                      메인 질문과 꼬리 질문의 진행 흐름을 라운드별로 확인하세요
-                    </CardDescription>
-                  </div>
-                  
-                  {/* 필터 및 토글 버튼 */}
-                  <div className="flex items-center gap-3">
-                    {/* 질문 타입 필터 */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm text-text-secondary">질문:</span>
-                      <select
-                        value={timelineFilter}
-                        onChange={(e) => setTimelineFilter(e.target.value as any)}
-                        className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-                      >
-                        <option value="all">전체</option>
-                        <option value="main">메인만</option>
-                        <option value="follow_up">꼬리만</option>
-                      </select>
-                    </div>
-                    
-                    {/* GOOD만 보기 토글 */}
-                    <label className="flex items-center gap-2 text-sm text-text-secondary">
-                      <input
-                        type="checkbox"
-                        checked={showOnlyGood}
-                        onChange={(e) => setShowOnlyGood(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 rounded border-gray-300"
-                      />
-                      우수 답변만
-                    </label>
-                    
-                    {/* 모두 접기/펼치기 */}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (expandedRounds.size === 0) {
-                          // 모든 라운드 펼치기
-                          const allRounds = new Set(
-                            Object.keys(
-                              transcript.items.reduce((acc: Record<number, any[]>, item: any) => {
-                                const r = item.round ?? 0;
-                                if (!acc[r]) acc[r] = [];
-                                acc[r].push(item);
-                                return acc;
-                              }, {})
-                            ).map(Number)
-                          );
-                          setExpandedRounds(allRounds);
-                        } else {
-                          // 모든 라운드 접기
-                          setExpandedRounds(new Set());
-                        }
-                      }}
-                      className="text-xs"
-                    >
-                      {expandedRounds.size === 0 ? '모두 펼치기' : '모두 접기'}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-6">
-                  {Object.entries(
-                    transcript.items
-                      .filter((item: any) => {
-                        // 질문 타입 필터
-                        if (timelineFilter === 'main' && item.type !== 'main') return false;
-                        if (timelineFilter === 'follow_up' && item.type !== 'follow_up') return false;
-                        
-                        // GOOD만 보기 필터
-                        if (showOnlyGood && item.evaluation?.rating !== 'GOOD') return false;
-                        
-                        return true;
-                      })
-                      .reduce((acc: Record<number, any[]>, item: any) => {
-                        const r = item.round ?? 0;
-                        if (!acc[r]) acc[r] = [];
-                        acc[r].push(item);
-                        return acc;
-                      }, {})
-                  ).map(([round, items]) => {
-                    const roundNum = parseInt(round);
-                    const isExpanded = expandedRounds.has(roundNum);
-                    
-                    return (
-                      <div key={round} className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">Round {round}</Badge>
-                            <span className="text-sm text-text-secondary">
-                              ({items.length}개 질문)
-                            </span>
-                          </div>
-                          
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              const newExpanded = new Set(expandedRounds);
-                              if (isExpanded) {
-                                newExpanded.delete(roundNum);
-                              } else {
-                                newExpanded.add(roundNum);
-                              }
-                              setExpandedRounds(newExpanded);
-                            }}
-                            className="text-xs"
-                          >
-                            {isExpanded ? '접기' : '펼치기'}
-                          </Button>
-                        </div>
-                        
-                        {isExpanded && (
-                          <div className="space-y-3">
-                            {(items as any[]).map((it, idx) => (
-                              <div key={idx} className="flex items-start gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                                  it.type === 'main' ? 'bg-blue-100' : 'bg-gray-200'
-                                }`}>
-                                  <MessageCircle className={`w-4 h-4 ${it.type === 'main' ? 'text-blue-600' : 'text-gray-600'}`} />
-                                </div>
-                                <div className="flex-1">
-                                  <div className="text-sm text-text-secondary">
-                                    <span className="font-medium mr-2">{it.type === 'main' ? '메인' : '꼬리'}</span>
-                                    <span className="text-text-primary">{it.question}</span>
-                                  </div>
-                                  {it.answer && (
-                                    <div className="mt-2 bg-blue-50 p-3 rounded-component">
-                                      <div className="text-xs text-text-secondary whitespace-pre-wrap">{it.answer}</div>
-                                    </div>
-                                  )}
-                                  {it.evaluation && (
-                                    <div className="mt-3 space-y-2">
-                                      {/* 등급 뱃지 */}
-                                      <div className="flex items-center gap-2">
-                                        {(() => {
-                                          const config = getRatingConfig(it.evaluation.rating);
-                                          const IconComponent = config.icon;
-                                          return (
-                                            <Badge className={`${config.color} border`}>
-                                              <IconComponent className="w-3 h-3 mr-1" />
-                                              {config.label}
-                                            </Badge>
-                                          );
-                                        })()}
-                                      </div>
-                                      
-                                      {/* Missing Dimensions 칩 */}
-                                      {it.evaluation.notes?.missing_dims && it.evaluation.notes.missing_dims.length > 0 && (
-                                        <div>
-                                          <span className="text-xs text-text-secondary mr-2">부족한 요소:</span>
-                                          <MissingDimsChips missingDims={it.evaluation.notes.missing_dims} />
-                                        </div>
-                                      )}
-                                      
-                                      {/* 액션 아이템 */}
-                                      {it.evaluation.notes?.hints && it.evaluation.notes.hints.length > 0 && (
-                                        <div>
-                                          <span className="text-xs text-text-secondary mb-2 block">개선 액션:</span>
-                                          <ActionItems hints={it.evaluation.notes.hints} />
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-          {/* 종합 평가 */}
+          {/* 종합 피드백 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Star className="w-5 h-5 text-yellow-500" />
-                종합 평가
+                종합 피드백
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="mb-6">
-                {/* 평가 항목별 배지 요약 */}
-                <div className="text-center mb-4">
-                  <h3 className="text-lg font-semibold text-text-primary mb-3">항목별 평가 결과</h3>
-                  <div className="flex flex-wrap justify-center gap-3">
-                    {(() => {
-                      const evaluations = transcript?.items
-                        ?.filter((item: any) => item.evaluation)
-                        ?.map((item: any) => item.evaluation) || [];
-                      const badges = calculateDimensionScores(evaluations);
-                      
-                      return Object.entries(badges).map(([dim, score]) => (
-                        <div key={dim} className="text-center">
-                          {getDimensionBadge(dim, score)}
-                        </div>
-                      ));
-                    })()}
-                  </div>
-                </div>
-                
-                {/* 종합 피드백 */}
-                <div className="prose max-w-none">
-                  <p className="text-text-secondary">{feedback.overall}</p>
-                </div>
+              <div className="prose max-w-none">
+                <p className="text-text-secondary leading-relaxed">{feedback.overall}</p>
               </div>
             </CardContent>
           </Card>
 
-          {/* 강점과 개선점 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-green-600">
-                  <CheckCircle className="w-5 h-5" />
-                  강점
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {feedback.strengths.map((strength: string, index: number) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-text-secondary">{strength}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-orange-600">
-                  <AlertCircle className="w-5 h-5" />
-                  개선점
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {feedback.areas.map((area: string, index: number) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-text-secondary">{area}</span>
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          </div>
+          {/* 강점과 개선점 통합 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="w-5 h-5" />
+                상세 분석
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 강점 */}
+                <div>
+                  <h3 className="font-semibold text-green-600 mb-3 flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5" />
+                    강점
+                  </h3>
+                  <ul className="space-y-2">
+                    {feedback.strengths?.map((strength: string, index: number) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-text-secondary leading-relaxed">{strength}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                
+                {/* 개선점 */}
+                <div>
+                  <h3 className="font-semibold text-orange-600 mb-3 flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5" />
+                    개선점
+                  </h3>
+                  <ul className="space-y-2">
+                    {feedback.areas?.map((area: string, index: number) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-sm text-text-secondary leading-relaxed">{area}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* 모범 답안 */}
           <Card>
@@ -734,150 +726,43 @@ export default function FeedbackPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-blue-50 border border-blue-200 rounded-component p-4">
-                <p className="text-sm text-text-secondary whitespace-pre-wrap">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
                   {feedback.model_answer}
                 </p>
               </div>
-            </CardContent>
-          </Card>
-
-          {/* Q&A 다시보기 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <MessageCircle className="w-5 h-5" />
-                Q&A 다시보기
-              </CardTitle>
-              <CardDescription>
-                각 질문별 상세 평가와 개선 방향을 확인하세요
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Accordion type="single" collapsible className="space-y-4">
-                {qaFeedbacks.map((qa, index) => (
-                  <AccordionItem key={index} value={`qa-${index}`} className="border rounded-component p-4">
-                    <AccordionTrigger className="text-left hover:no-underline">
-                      <div className="flex items-center justify-between w-full pr-4">
-                        <div>
-                          <span className="text-lg font-medium">질문 {index + 1}</span>
-                          <p className="text-sm text-text-secondary mt-1 line-clamp-2">
-                            {qa.question}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star
-                                key={i}
-                                className={`w-4 h-4 ${
-                                  i < qa.score ? 'text-yellow-400 fill-current' : 'text-gray-300'
-                                }`}
-                              />
-                            ))}
-                          </div>
-                          <span className="text-sm font-medium">{qa.score}/5</span>
-                        </div>
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="space-y-4 pt-4">
-                      {/* 질문 */}
-                      <div>
-                        <h4 className="font-medium text-text-primary mb-2">질문</h4>
-                        <div className="bg-gray-50 p-3 rounded-component">
-                          <p className="text-sm text-text-secondary">{qa.question}</p>
-                        </div>
-                      </div>
-                      
-                      {/* 내 답변 */}
-                      <div>
-                        <h4 className="font-medium text-text-primary mb-2">내 답변</h4>
-                        <div className="bg-blue-50 p-3 rounded-component">
-                          <p className="text-sm text-text-secondary whitespace-pre-wrap">{qa.answer}</p>
-                        </div>
-                      </div>
-
-                      {/* 상세 평가 */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <h4 className="font-medium text-green-600 mb-2 flex items-center gap-1">
-                            <CheckCircle className="w-4 h-4" />
-                            잘한 점
-                          </h4>
-                          <ul className="space-y-1">
-                            {qa.strengths.map((strength, i) => (
-                              <li key={i} className="text-sm text-text-secondary flex items-start gap-1">
-                                <span className="text-green-500">•</span>
-                                {strength}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                        
-                        <div>
-                          <h4 className="font-medium text-orange-600 mb-2 flex items-center gap-1">
-                            <AlertCircle className="w-4 h-4" />
-                            개선할 점
-                          </h4>
-                          <ul className="space-y-1">
-                            {qa.improvements.map((improvement, i) => (
-                              <li key={i} className="text-sm text-text-secondary flex items-start gap-1">
-                                <span className="text-orange-500">•</span>
-                                {improvement}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
-
-                      {/* 모범 답안 */}
-                      <div>
-                        <h4 className="font-medium text-text-primary mb-2">모범 답안 예시</h4>
-                        <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-component">
-                          <p className="text-sm text-text-secondary">{qa.modelAnswer}</p>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                ))}
-              </Accordion>
             </CardContent>
           </Card>
         </div>
 
         {/* 사이드바 */}
         <div className="space-y-6">
-          {/* 역량별 평가 배지 */}
+          {/* 다음 단계 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                역량별 평가
+                <FileText className="w-5 h-5" />
+                다음 단계
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {(() => {
-                  const evaluations = transcript?.items
-                    ?.filter((item: any) => item.evaluation)
-                    ?.map((item: any) => item.evaluation) || [];
-                  const badges = calculateDimensionScores(evaluations);
-                  
-                  return Object.entries(badges).map(([dim, score]) => (
-                    <div key={dim} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <span className="text-sm text-text-secondary">
-                        {dim === 'understanding' ? '이해도' : 
-                         dim === 'quantitative' ? '정량성' :
-                         dim === 'justification' ? '정당화' :
-                         dim === 'tradeoff' ? '트레이드오프' :
-                         dim === 'process' ? '과정' : dim}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {getDimensionBadge(dim, score)}
-                      </div>
-                    </div>
-                  ));
-                })()}
+              <div className="space-y-3">
+                <Button variant="outline" className="w-full justify-start gap-2">
+                  <MessageCircle className="w-4 h-4" />
+                  다시 면접 연습하기
+                </Button>
+                <Link href="/experiences/new">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <FileText className="w-4 h-4" />
+                    새 경험 추가하기
+                  </Button>
+                </Link>
+                <Link href="/jobs/new">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Target className="w-4 h-4" />
+                    새 공고 등록하기
+                  </Button>
+                </Link>
               </div>
             </CardContent>
           </Card>
@@ -909,36 +794,6 @@ export default function FeedbackPage() {
                   <span className="text-sm text-text-secondary">첫 면접</span>
                   <span className="text-text-secondary">🥈 1개, 🥉 4개</span>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 다음 단계 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                다음 단계
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <Button variant="outline" className="w-full justify-start gap-2">
-                  <MessageCircle className="w-4 h-4" />
-                  다시 면접 연습하기
-                </Button>
-                <Link href="/experiences/new">
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <FileText className="w-4 h-4" />
-                    새 경험 추가하기
-                  </Button>
-                </Link>
-                <Link href="/jobs/new">
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Target className="w-4 h-4" />
-                    새 공고 등록하기
-                  </Button>
-                </Link>
               </div>
             </CardContent>
           </Card>
