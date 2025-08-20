@@ -19,7 +19,9 @@ import {
   RefreshCw,
   Copy,
   Check,
-  X
+  X,
+  Plus,
+  Briefcase
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -397,61 +399,23 @@ export default function FeedbackPage() {
       {/* 핵심 요약 블록 */}
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
         <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {/* 평가 항목별 배지 */}
-            <div className="text-center">
-              <h3 className="font-semibold text-blue-900 mb-3">평가 결과</h3>
-              <div className="flex flex-wrap justify-center gap-2">
-                {(() => {
-                  const evaluations = transcript?.items
-                    ?.filter((item: any) => item.evaluation)
-                    ?.map((item: any) => item.evaluation) || [];
-                  const badges = calculateDimensionScores(evaluations);
-                  
-                  return Object.entries(badges).map(([dim, score]) => (
-                    <div key={dim} className="text-center">
-                      {getDimensionBadge(dim, score)}
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
-            
-            {/* 핵심 강점 */}
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-3">핵심 강점</h3>
-              <div className="space-y-2">
-                {feedback.strengths?.slice(0, 3).map((strength: string, index: number) => (
-                  <div key={index} className="flex items-start gap-2 text-sm text-blue-800">
-                    <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                    <span className="line-clamp-2 leading-relaxed">{strength}</span>
+          <div className="text-center">
+            <h3 className="font-semibold text-blue-900 mb-4 text-xl">면접 평가 결과</h3>
+            <div className="flex flex-wrap justify-center gap-3 mb-4">
+              {(() => {
+                const evaluations = transcript?.items
+                  ?.filter((item: any) => item.evaluation)
+                  ?.map((item: any) => item.evaluation) || [];
+                const badges = calculateDimensionScores(evaluations);
+                
+                return Object.entries(badges).map(([dim, score]) => (
+                  <div key={dim} className="text-center">
+                    {getDimensionBadge(dim, score)}
                   </div>
-                ))}
-              </div>
+                ));
+              })()}
             </div>
-            
-            {/* 즉시 실행 액션 */}
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-3">개선 액션</h3>
-              <div className="space-y-2">
-                {feedback.areas?.slice(0, 3).map((area: string, index: number) => (
-                  <div key={index} className="flex items-start gap-2">
-                    <input 
-                      type="checkbox" 
-                      id={`action-${index}`}
-                      className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 mt-0.5"
-                    />
-                    <label htmlFor={`action-${index}`} className="text-sm text-blue-800 cursor-pointer line-clamp-2 leading-relaxed">
-                      {area}
-                    </label>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 전체 성과 */}
             <div className="text-center">
-              <h3 className="font-semibold text-blue-900 mb-3">전체 성과</h3>
               <div className="text-2xl font-bold text-blue-600 mb-2">
                 {(() => {
                   const evaluations = transcript?.items
@@ -461,9 +425,9 @@ export default function FeedbackPage() {
                   const goldCount = Object.values(badges).filter(score => score === 'gold').length;
                   const totalCount = Object.keys(badges).length;
                   return `${goldCount}/${totalCount}`;
-                })()} 우수
+                })()} 항목 우수
               </div>
-              <div className="text-sm text-blue-700">항목 중</div>
+              <div className="text-sm text-blue-700">5개 평가 항목 중</div>
             </div>
           </div>
         </CardContent>
@@ -663,73 +627,125 @@ export default function FeedbackPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="prose max-w-none">
-                <p className="text-text-secondary leading-relaxed">{feedback.overall}</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 강점과 개선점 통합 */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="w-5 h-5" />
-                상세 분석
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* 강점 */}
+              <div className="space-y-4">
+                {/* 전체 요약 */}
                 <div>
-                  <h3 className="font-semibold text-green-600 mb-3 flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5" />
-                    강점
-                  </h3>
-                  <ul className="space-y-2">
-                    {feedback.strengths?.map((strength: string, index: number) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm text-text-secondary leading-relaxed">{strength}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  <h3 className="font-semibold text-text-primary mb-2">전체 요약</h3>
+                  <p className="text-text-secondary leading-relaxed">{feedback.overall}</p>
                 </div>
                 
-                {/* 개선점 */}
-                <div>
-                  <h3 className="font-semibold text-orange-600 mb-3 flex items-center gap-2">
-                    <AlertCircle className="w-5 h-5" />
-                    개선점
-                  </h3>
-                  <ul className="space-y-2">
-                    {feedback.areas?.map((area: string, index: number) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
-                        <span className="text-sm text-text-secondary leading-relaxed">{area}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {/* 상세 분석 */}
+                {feedback.detailed_analysis && (
+                  <div>
+                    <h3 className="font-semibold text-text-primary mb-2">상세 분석</h3>
+                    <p className="text-text-secondary leading-relaxed">{feedback.detailed_analysis}</p>
+                  </div>
+                )}
+                
+                {/* 강점과 개선점 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 강점 */}
+                  <div>
+                    <h3 className="font-semibold text-green-600 mb-3 flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5" />
+                      강점
+                    </h3>
+                    <ul className="space-y-2">
+                      {feedback.strengths?.map((strength: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-text-secondary leading-relaxed">{strength}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  
+                  {/* 개선점 */}
+                  <div>
+                    <h3 className="font-semibold text-orange-600 mb-3 flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5" />
+                      개선점
+                    </h3>
+                    <ul className="space-y-2">
+                      {feedback.areas?.map((area: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <AlertCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-text-secondary leading-relaxed">{area}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* 모범 답안 */}
+          {/* 프로젝트 개선 제안 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Lightbulb className="w-5 h-5 text-yellow-500" />
-                모범 답안 예시
+                프로젝트 개선 제안
               </CardTitle>
               <CardDescription>
-                비슷한 질문에 대한 모범적인 답변 방식을 참고하세요
+                면접 내용을 바탕으로 프로젝트 발전 방향을 제안합니다
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                <p className="text-sm text-text-secondary whitespace-pre-wrap leading-relaxed">
-                  {feedback.model_answer}
-                </p>
+              <div className="space-y-4">
+                {/* 추가하면 좋을 내용 */}
+                {feedback.project_suggestions?.additional_content && (
+                  <div>
+                    <h3 className="font-semibold text-blue-600 mb-2 flex items-center gap-2">
+                      <Plus className="w-5 h-5" />
+                      추가하면 좋을 내용
+                    </h3>
+                    <ul className="space-y-2">
+                      {feedback.project_suggestions.additional_content.map((content: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <Plus className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-text-secondary leading-relaxed">{content}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* 구체화 방향 */}
+                {feedback.project_suggestions?.concretization && (
+                  <div>
+                    <h3 className="font-semibold text-purple-600 mb-2 flex items-center gap-2">
+                      <Target className="w-5 h-5" />
+                      구체화 방향
+                    </h3>
+                    <ul className="space-y-2">
+                      {feedback.project_suggestions.concretization.map((direction: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <Target className="w-4 h-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-text-secondary leading-relaxed">{direction}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* 실무 적용 */}
+                {feedback.project_suggestions?.practical_application && (
+                  <div>
+                    <h3 className="font-semibold text-green-600 mb-2 flex items-center gap-2">
+                      <Briefcase className="w-5 h-5" />
+                      실무 적용 방법
+                    </h3>
+                    <ul className="space-y-2">
+                      {feedback.project_suggestions.practical_application.map((method: string, index: number) => (
+                        <li key={index} className="flex items-start gap-2">
+                          <Briefcase className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-sm text-text-secondary leading-relaxed">{method}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>

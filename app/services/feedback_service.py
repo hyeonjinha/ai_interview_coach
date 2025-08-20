@@ -11,12 +11,44 @@ from app.models.entities import InterviewSession, InterviewAnswer, InterviewQues
 
 
 def _feedback_prompt(transcript: List[Dict[str, str]]) -> str:
+    """면접 전사와 평가 결과를 종합한 피드백 프롬프트"""
     lines = []
     for t in transcript:
         lines.append(f"Q({t['round']},{t['type']}): {t['question']}")
         lines.append(f"A: {t['answer']}")
-        lines.append(f"Eval: {t['evaluation']}")
+        if t.get('evaluation'):
+            eval_data = t['evaluation']
+            lines.append(f"평가: {eval_data.get('rating', 'N/A')}")
+            if eval_data.get('notes'):
+                notes = eval_data['notes']
+                if notes.get('missing_dims'):
+                    lines.append(f"부족한 요소: {', '.join(notes['missing_dims'])}")
+                if notes.get('hints'):
+                    lines.append(f"개선 힌트: {', '.join(notes['hints'])}")
+        lines.append("---")
+    
     return "\n".join(lines)
+
+
+def _project_improvement_prompt(transcript: List[Dict[str, str]], project_context: str = "") -> str:
+    """프로젝트 기반 개선 제안 프롬프트"""
+    context_info = f"프로젝트 컨텍스트: {project_context}\n\n" if project_context else ""
+    
+    return f"""{context_info}면접 내용을 바탕으로 프로젝트 개선 방향을 제안하세요.
+
+면접 내용:
+{_feedback_prompt(transcript)}
+
+프로젝트 개선 제안:
+1. 추가하면 좋을 내용: 프로젝트에 보완하면 좋을 기술적 요소나 과정
+2. 구체화 방향: 이미 언급된 내용을 더 구체적으로 발전시킬 방향
+3. 실무 적용: 실제 업무에서 활용할 수 있는 구체적 방법
+
+형식(JSON): {{
+  "additional_content": ["추가할 내용 1", "추가할 내용 2"],
+  "concretization": ["구체화 방향 1", "구체화 방향 2"],
+  "practical_application": ["실무 적용 방법 1", "실무 적용 방법 2"]
+}}"""
 
 
 def generate_feedback(db: Session, session_id: int) -> Dict[str, Any]:
@@ -41,37 +73,69 @@ def generate_feedback(db: Session, session_id: int) -> Dict[str, Any]:
             }
         )
 
-    sys = (
-        "당신은 시니어 면접 코치입니다. 대화 내역과 평가를 바탕으로 종합 피드백을 작성하세요."
+    # 1. 종합 피드백 생성 (질문별 평가 결과 종합)
+    sys_overall = (
+        "당신은 시니어 면접 코치입니다. 질문별 평가 결과를 종합하여 "
+        "구체적이고 실행 가능한 피드백을 작성하세요."
     )
-    usr = (
+    usr_overall = (
         _feedback_prompt(transcript)
-        + "\n\n형식(JSON): {\"overall\":\"...\", \"strengths\":[""], \"areas\":[""], \"model_answer\":\"...\"}"
+        + "\n\n위 면접 내용과 평가 결과를 바탕으로 종합 피드백을 작성하세요."
+        + "\n\n형식(JSON): {\"overall\":\"...\", \"strengths\":[\"\"], \"areas\":[\"\"], \"detailed_analysis\":\"...\"}"
     )
-    raw = llm.chat([
-        {"role": "system", "content": sys},
-        {"role": "user", "content": usr},
+    
+    raw_overall = llm.chat([
+        {"role": "system", "content": sys_overall},
+        {"role": "user", "content": usr_overall},
     ])
 
+    # 2. 프로젝트 개선 제안 생성
+    sys_project = (
+        "당신은 시니어 기술 리더입니다. 면접 내용을 바탕으로 "
+        "프로젝트 개선 방향을 구체적으로 제안하세요."
+    )
+    usr_project = _project_improvement_prompt(transcript)
+    
+    raw_project = llm.chat([
+        {"role": "system", "content": sys_project},
+        {"role": "user", "content": usr_project},
+    ])
+
+    # 3. 결과 파싱 및 통합
     import json
-    overall = "전반적으로 수고하셨습니다. 핵심 근거 제시를 더 보강해보세요."
+    
+    # 기본값 설정
+    overall = "전반적으로 수고하셨습니다. 질문별 평가 결과를 바탕으로 개선 방향을 제시합니다."
     strengths: List[str] = []
-    areas: List[str] = ["정량적 성과 수치 제시", "기술 선택 이유와 대안 비교"]
-    model_answer = "STAR 구조로 상황-과업-행동-결과를 명확히, 특히 결과는 수치로 제시하세요."
+    areas: List[str] = []
+    detailed_analysis = "면접 내용을 종합 분석한 결과입니다."
+    project_suggestions = {
+        "additional_content": ["프로젝트에 추가하면 좋을 내용"],
+        "concretization": ["구체화할 방향"],
+        "practical_application": ["실무 적용 방법"]
+    }
+    
     try:
-        parsed = json.loads(raw)
-        overall = parsed.get("overall", overall)
-        strengths = parsed.get("strengths", strengths)
-        areas = parsed.get("areas", areas)
-        model_answer = parsed.get("model_answer", model_answer)
-    except Exception:
+        # 종합 피드백 파싱
+        parsed_overall = json.loads(raw_overall)
+        overall = parsed_overall.get("overall", overall)
+        strengths = parsed_overall.get("strengths", strengths)
+        areas = parsed_overall.get("areas", areas)
+        detailed_analysis = parsed_overall.get("detailed_analysis", detailed_analysis)
+        
+        # 프로젝트 제안 파싱
+        parsed_project = json.loads(raw_project)
+        project_suggestions = parsed_project
+    except Exception as e:
+        print(f"피드백 파싱 실패: {e}")
         pass
 
     return {
         "overall": overall,
         "strengths": strengths,
         "areas": areas,
-        "model_answer": model_answer,
+        "detailed_analysis": detailed_analysis,
+        "project_suggestions": project_suggestions,
     }
 
 
@@ -114,17 +178,23 @@ def parse_feedback_response(raw_feedback: str) -> Dict[str, Any]:
     """LLM 응답 파싱"""
     import json
     
-    overall = "전반적으로 수고하셨습니다. 핵심 근거 제시를 더 보강해보세요."
+    overall = "전반적으로 수고하셨습니다. 질문별 평가 결과를 바탕으로 개선 방향을 제시합니다."
     strengths: List[str] = ["면접에 적극적으로 참여해주셨습니다"]
-    areas: List[str] = ["정량적 성과 수치 제시", "기술 선택 이유와 대안 비교"]
-    model_answer = "STAR 구조로 상황-과업-행동-결과를 명확히, 특히 결과는 수치로 제시하세요."
+    areas: List[str] = []
+    detailed_analysis = "면접 내용을 종합 분석한 결과입니다."
+    project_suggestions = {
+        "additional_content": ["프로젝트에 추가하면 좋을 내용"],
+        "concretization": ["구체화할 방향"],
+        "practical_application": ["실무 적용 방법"]
+    }
     
     try:
         parsed = json.loads(raw_feedback)
         overall = parsed.get("overall", overall)
         strengths = parsed.get("strengths", strengths)
         areas = parsed.get("areas", areas)
-        model_answer = parsed.get("model_answer", model_answer)
+        detailed_analysis = parsed.get("detailed_analysis", detailed_analysis)
+        project_suggestions = parsed.get("project_suggestions", project_suggestions)
     except Exception:
         pass
     
@@ -132,7 +202,8 @@ def parse_feedback_response(raw_feedback: str) -> Dict[str, Any]:
         "overall": overall,
         "strengths": strengths,
         "areas": areas,
-        "model_answer": model_answer,
+        "detailed_analysis": detailed_analysis,
+        "project_suggestions": project_suggestions,
     }
 
 
