@@ -24,13 +24,11 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Loading, CardSkeleton } from '@/components/ui/loading';
 import { FeedbackLoadingUI } from '@/components/ui/feedback-loading';
 import { interviewApi } from '@/lib/api';
-import { getScoreColor, getScoreBgColor, formatDate } from '@/lib/utils';
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
+import { formatDate } from '@/lib/utils';
 
 // 등급별 색상 및 라벨 매핑
 const getRatingConfig = (rating: string) => {
@@ -44,6 +42,62 @@ const getRatingConfig = (rating: string) => {
     default:
       return { color: 'bg-gray-100 text-gray-800 border-gray-200', label: '평가 없음', icon: AlertCircle };
   }
+};
+
+// 평가 항목별 배지 시스템
+const getDimensionBadge = (dimension: string, score: 'gold' | 'silver' | 'bronze' | 'none') => {
+  const config = {
+    gold: { color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: '🥇' },
+    silver: { color: 'bg-gray-100 text-gray-800 border-gray-300', icon: '🥈' },
+    bronze: { color: 'bg-orange-100 text-orange-800 border-orange-300', icon: '🥉' },
+    none: { color: 'bg-red-50 text-red-600 border-red-200', icon: '❌' }
+  };
+  
+  const dimLabels: Record<string, string> = {
+    'understanding': '이해도',
+    'quantitative': '정량성', 
+    'justification': '정당화',
+    'tradeoff': '트레이드오프',
+    'process': '과정'
+  };
+  
+  return (
+    <Badge className={`${config[score].color} border text-xs px-2 py-1`}>
+      <span className="mr-1">{config[score].icon}</span>
+      {dimLabels[dimension] || dimension}
+    </Badge>
+  );
+};
+
+// 평가 항목별 점수 계산 (배지 부여용)
+const calculateDimensionScores = (evaluations: any[]) => {
+  const dimensions = ['understanding', 'quantitative', 'justification', 'tradeoff', 'process'];
+  const scores: Record<string, number> = {};
+  
+  dimensions.forEach(dim => {
+    scores[dim] = 0;
+  });
+  
+  evaluations.forEach(evaluation => {
+    if (evaluation.notes?.missing_dims) {
+      evaluation.notes.missing_dims.forEach((dim: string) => {
+        if (scores[dim] !== undefined) {
+          scores[dim] += 1; // missing_dims가 있으면 점수 감점
+        }
+      });
+    }
+  });
+  
+  // 배지 부여 (missing_dims가 적을수록 높은 배지)
+  const badges: Record<string, 'gold' | 'silver' | 'bronze' | 'none'> = {};
+  dimensions.forEach(dim => {
+    if (scores[dim] === 0) badges[dim] = 'gold';
+    else if (scores[dim] <= 1) badges[dim] = 'silver';
+    else if (scores[dim] <= 2) badges[dim] = 'bronze';
+    else badges[dim] = 'none';
+  });
+  
+  return badges;
 };
 
 // missing_dims 칩 컴포넌트
@@ -134,15 +188,7 @@ const ActionItems = ({ hints }: { hints: string[] }) => {
   );
 };
 
-// 가상의 평가 데이터 (실제로는 백엔드에서 받아올 것)
-const mockEvaluationData = [
-  { subject: '질문 이해도', A: 85, fullMark: 100 },
-  { subject: '논리성', A: 78, fullMark: 100 },
-  { subject: '기술 깊이', A: 92, fullMark: 100 },
-  { subject: '공고 적합성', A: 88, fullMark: 100 },
-  { subject: '커뮤니케이션', A: 82, fullMark: 100 },
-  { subject: '창의성', A: 75, fullMark: 100 },
-];
+
 
 export default function FeedbackPage() {
   const params = useParams();
@@ -228,9 +274,6 @@ export default function FeedbackPage() {
   });
 
   const isLoading = transcriptLoading;
-
-  // 전체 점수 계산
-  const overallScore = mockEvaluationData.reduce((sum, item) => sum + item.A, 0) / mockEvaluationData.length;
   
   // 가상의 상세 Q&A 피드백 데이터
   const qaFeedbacks = transcript?.items.map((item, index) => ({
@@ -356,15 +399,23 @@ export default function FeedbackPage() {
       <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
         <CardContent className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* 전체 점수 */}
+            {/* 평가 항목별 배지 */}
             <div className="text-center">
-              <div className="text-3xl font-bold text-blue-600 mb-2">
-                {overallScore.toFixed(1)}
+              <h3 className="font-semibold text-blue-900 mb-3">평가 항목별 배지</h3>
+              <div className="flex flex-wrap justify-center gap-2">
+                {(() => {
+                  const evaluations = transcript?.items
+                    ?.filter((item: any) => item.evaluation)
+                    ?.map((item: any) => item.evaluation) || [];
+                  const badges = calculateDimensionScores(evaluations);
+                  
+                  return Object.entries(badges).map(([dim, score]) => (
+                    <div key={dim} className="text-center">
+                      {getDimensionBadge(dim, score)}
+                    </div>
+                  ));
+                })()}
               </div>
-              <div className="text-sm text-blue-700 mb-2">전체 점수</div>
-              <Badge className={`${getScoreBgColor(overallScore / 20)} ${getScoreColor(overallScore / 20)}`}>
-                {overallScore >= 90 ? '우수' : overallScore >= 80 ? '양호' : overallScore >= 70 ? '보통' : '개선 필요'}
-              </Badge>
             </div>
             
             {/* 핵심 강점 */}
@@ -602,20 +653,30 @@ export default function FeedbackPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center mb-6">
-                <div className={`text-6xl font-bold mb-2 ${getScoreColor(overallScore / 20)}`}>
-                  {overallScore.toFixed(1)}
+              <div className="mb-6">
+                {/* 평가 항목별 배지 요약 */}
+                <div className="text-center mb-4">
+                  <h3 className="text-lg font-semibold text-text-primary mb-3">항목별 평가 결과</h3>
+                  <div className="flex flex-wrap justify-center gap-3">
+                    {(() => {
+                      const evaluations = transcript?.items
+                        ?.filter((item: any) => item.evaluation)
+                        ?.map((item: any) => item.evaluation) || [];
+                      const badges = calculateDimensionScores(evaluations);
+                      
+                      return Object.entries(badges).map(([dim, score]) => (
+                        <div key={dim} className="text-center">
+                          {getDimensionBadge(dim, score)}
+                        </div>
+                      ));
+                    })()}
+                  </div>
                 </div>
-                <div className="text-lg text-text-secondary">/ 100점</div>
-                <div className={`inline-block px-4 py-2 rounded-full mt-2 ${getScoreBgColor(overallScore / 20)}`}>
-                  <span className={`font-medium ${getScoreColor(overallScore / 20)}`}>
-                    {overallScore >= 90 ? '우수' : overallScore >= 80 ? '양호' : overallScore >= 70 ? '보통' : '개선 필요'}
-                  </span>
+                
+                {/* 종합 피드백 */}
+                <div className="prose max-w-none">
+                  <p className="text-text-secondary">{feedback.overall}</p>
                 </div>
-              </div>
-              
-              <div className="prose max-w-none">
-                <p className="text-text-secondary">{feedback.overall}</p>
               </div>
             </CardContent>
           </Card>
@@ -786,7 +847,7 @@ export default function FeedbackPage() {
 
         {/* 사이드바 */}
         <div className="space-y-6">
-          {/* 역량별 점수 */}
+          {/* 역량별 평가 배지 */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -795,36 +856,28 @@ export default function FeedbackPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-64 mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={mockEvaluationData}>
-                    <PolarGrid />
-                    <PolarAngleAxis dataKey="subject" tick={{ fontSize: 12 }} />
-                    <PolarRadiusAxis angle={90} domain={[0, 100]} tick={false} />
-                    <Radar
-                      name="점수"
-                      dataKey="A"
-                      stroke="#4A90E2"
-                      fill="#4A90E2"
-                      fillOpacity={0.3}
-                      strokeWidth={2}
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-              
-              <div className="space-y-3">
-                {mockEvaluationData.map((item, index) => (
-                  <div key={index} className="flex items-center justify-between">
-                    <span className="text-sm text-text-secondary">{item.subject}</span>
-                    <div className="flex items-center gap-2">
-                      <Progress value={item.A} className="w-16 h-2" />
-                      <span className={`text-sm font-medium ${getScoreColor(item.A / 20)}`}>
-                        {item.A}
+              <div className="space-y-4">
+                {(() => {
+                  const evaluations = transcript?.items
+                    ?.filter((item: any) => item.evaluation)
+                    ?.map((item: any) => item.evaluation) || [];
+                  const badges = calculateDimensionScores(evaluations);
+                  
+                  return Object.entries(badges).map(([dim, score]) => (
+                    <div key={dim} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <span className="text-sm text-text-secondary">
+                        {dim === 'understanding' ? '이해도' : 
+                         dim === 'quantitative' ? '정량성' :
+                         dim === 'justification' ? '정당화' :
+                         dim === 'tradeoff' ? '트레이드오프' :
+                         dim === 'process' ? '과정' : dim}
                       </span>
+                      <div className="flex items-center gap-2">
+                        {getDimensionBadge(dim, score)}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ));
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -839,22 +892,22 @@ export default function FeedbackPage() {
             </CardHeader>
             <CardContent>
               <div className="text-center mb-4">
-                <div className="text-2xl font-bold text-green-600 mb-1">+12점</div>
+                <div className="text-2xl font-bold text-green-600 mb-1">+3개</div>
                 <div className="text-sm text-text-secondary">이전 면접 대비</div>
               </div>
               
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-text-secondary">이번 면접</span>
-                  <span className="font-medium">{overallScore.toFixed(1)}점</span>
+                  <span className="font-medium">🥇 2개, 🥈 2개, 🥉 1개</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-text-secondary">이전 면접</span>
-                  <span className="text-text-secondary">{(overallScore - 12).toFixed(1)}점</span>
+                  <span className="text-text-secondary">🥇 1개, 🥈 1개, 🥉 3개</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-text-secondary">첫 면접</span>
-                  <span className="text-text-secondary">{(overallScore - 25).toFixed(1)}점</span>
+                  <span className="text-text-secondary">🥈 1개, 🥉 4개</span>
                 </div>
               </div>
             </CardContent>
